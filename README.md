@@ -7,7 +7,7 @@
 [![Powered by Whisper](https://img.shields.io/badge/powered%20by-faster--whisper-blueviolet?style=flat-square)](https://github.com/SYSTRAN/faster-whisper)
 [![Stars](https://img.shields.io/github/stars/felipezarco/zarco-x11-dictation?style=flat-square)](https://github.com/felipezarco/zarco-x11-dictation/stargazers)
 
-## Why type? I just talk to my machine now.
+## Why type? I just talk to my machine now. Perfect Ubuntu (Xorg) offline dictation with a single keyboard shortcut.
 
 I got tired of switching context to type every little thing. So I built this: I press a shortcut, say what I want, press it again — and the text appears wherever my cursor is. No cloud, no account, no subscription. 100% offline. Just my voice and my machine.
 
