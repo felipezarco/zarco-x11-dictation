@@ -11,7 +11,7 @@
 
 I got tired of switching context to type every little thing. So I built this: I press a shortcut, say what I want, press it again — and the text appears wherever my cursor is. No cloud, no account, no subscription. 100% offline. Just my voice and my machine.
 
-Press **CTRL+`** to start recording, say what you want, press **CTRL+`** again and the text is automatically typed wherever your cursor is — in any application.
+Press **CTRL+Alt+X** to start recording, say what you want, press **CTRL+Alt+X** again and the text is automatically typed wherever your cursor is — in any application.
 
 ---
 
@@ -45,15 +45,15 @@ curl -fsSL https://raw.githubusercontent.com/felipezarco/zarco-x11-dictation/mai
 chmod +x ~/setup-dictation.sh && ~/setup-dictation.sh
 ```
 
-The script installs dependencies, sets up the Python environment with [faster-whisper](https://github.com/SYSTRAN/faster-whisper), downloads the voice model (~244MB), and registers the **CTRL+`** shortcut in GNOME automatically.
+The script installs dependencies, sets up the Python environment with [faster-whisper](https://github.com/SYSTRAN/faster-whisper), downloads the voice model (~244MB), and registers the **CTRL+Alt+X** shortcut in GNOME automatically.
 
 ## Usage
 
 | Action | Result |
 |---|---|
-| **CTRL+`** (1st press) | Starts recording |
+| **CTRL+Alt+X** (1st press) | Starts recording |
 | Speak normally | — |
-| **CTRL+`** (2nd press) | Transcribes and types the text where your cursor is |
+| **CTRL+Alt+X** (2nd press) | Transcribes and types the text where your cursor is |
 
 Works in any text field: terminal, VS Code, browser, editor, etc.
 
@@ -106,8 +106,4 @@ This code is licensed under the [MIT License](LICENSE.md).
 
 If you find this project useful, consider supporting its development:
 
-<form action="https://www.paypal.com/donate" method="post" target="_top">
-<input type="hidden" name="hosted_button_id" value="A4SYWHDBRXLQC" />
-<input type="image" src="https://www.paypalobjects.com/en_US/i/btn/btn_donate_SM.gif" border="0" name="submit" title="PayPal - The safer, easier way to pay online!" alt="Donate with PayPal button" />
-<img alt="" border="0" src="https://www.paypal.com/en_BR/i/scr/pixel.gif" width="1" height="1" />
-</form>
+[![Donate with PayPal](https://www.paypalobjects.com/en_US/i/btn/btn_donate_SM.gif)](https://www.paypal.com/donate?hosted_button_id=A4SYWHDBRXLQC)

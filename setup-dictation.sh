@@ -184,9 +184,9 @@ register_shortcut() {
     gsettings set $SCHEMA custom-keybindings "['${BASE}']"
     gsettings set "${SCHEMA}.custom-keybinding:${BASE}" name    "Ditado por Voz"
     gsettings set "${SCHEMA}.custom-keybinding:${BASE}" command "$SCRIPT_DIR/dictation-toggle"
-    gsettings set "${SCHEMA}.custom-keybinding:${BASE}" binding "<Control>grave"
+    gsettings set "${SCHEMA}.custom-keybinding:${BASE}" binding "<Control><Alt>x"
 
-    info "Atalho CTRL+\` configurado!"
+    info "Atalho CTRL+Alt+X configurado!"
     warning "Se o atalho não funcionar de imediato, faça logout/login."
 }
 
