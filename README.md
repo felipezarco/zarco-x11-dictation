@@ -14,6 +14,8 @@ I got tired of switching context to type every little thing. So I built this: I 
 
 Press **CTRL+Alt+X** to start recording, say what you want, press **CTRL+Alt+X** again and the text is automatically typed wherever your cursor is — in any application.
 
+<img width="1231" height="727" alt="image" src="https://github.com/user-attachments/assets/b08c9252-fa74-466a-95b0-1ead88aa5943" />
+
 ---
 
 ## ⚠️ Essential Requirement: Log in with Ubuntu (Xorg)
@@ -29,7 +31,18 @@ Login screen → click ⚙️ → select "Ubuntu" (Xorg) → log in
 
 ---
 
-## Installation
+## Install
+
+### Option 1
+
+Download it directly to your home directory and run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/felipezarco/zarco-x11-dictation/main/setup-dictation.sh -o ~/setup-dictation.sh
+chmod +x ~/setup-dictation.sh && ~/setup-dictation.sh
+```
+
+### Option 2
 
 Clone the repository and run the setup script:
 
@@ -37,13 +50,6 @@ Clone the repository and run the setup script:
 git clone https://github.com/felipezarco/zarco-x11-dictation.git
 cd zarco-x11-dictation
 chmod +x setup-dictation.sh && ./setup-dictation.sh
-```
-
-Or download it directly to your home directory and run:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/felipezarco/zarco-x11-dictation/main/setup-dictation.sh -o ~/setup-dictation.sh
-chmod +x ~/setup-dictation.sh && ~/setup-dictation.sh
 ```
 
 The script installs dependencies, sets up the Python environment with [faster-whisper](https://github.com/SYSTRAN/faster-whisper), downloads the voice model (~244MB), and registers the **CTRL+Alt+X** shortcut in GNOME automatically.
