@@ -1,7 +1,7 @@
 #!/bin/bash
 # =============================================================================
 # zarco-x11-dictate — setup-dictation.sh
-# Instala e configura ditado por voz no Ubuntu X11 (atalho CTRL+`)
+# Instala e configura ditado por voz no Ubuntu X11 (atalho CTRL+Alt+X)
 # Usa: faster-whisper (offline) + xdotool + arecord
 #
 # IMPORTANTE: Faça login com a sessão "Ubuntu" (Xorg), NÃO "Ubuntu com Wayland".
@@ -228,9 +228,9 @@ echo -e "${GREEN}  Instalação concluída!${NC}"
 echo "============================================"
 echo ""
 echo "  Como usar:"
-echo "  → Pressione CTRL+\` para INICIAR a gravação"
+echo "  → Pressione CTRL+Alt+X para INICIAR a gravação"
 echo "  → Fale o que quiser"
-echo "  → Pressione CTRL+\` novamente para PARAR e digitar"
+echo "  → Pressione CTRL+Alt+X novamente para PARAR e digitar"
 echo ""
 echo "  Para trocar o idioma ou modelo, edite:"
 echo "  $SCRIPT_DIR/dictation-transcribe.py"
