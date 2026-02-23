@@ -103,7 +103,7 @@ if [ -f "\$PID_FILE" ]; then
     exit 0
 fi
 
-notify-send -i microphone "Ditado" "🎙️ Gravando... (CTRL+\` para parar)" -t 2000
+notify-send -i microphone "Ditado" "🎙️ Gravando... (CTRL+Alt+X para parar)" -t 2000
 
 # Grava até receber sinal
 arecord -f cd -r 16000 -c 1 -t wav "\$AUDIO_FILE" -q &
@@ -166,7 +166,7 @@ TOGGLEEOF
 }
 
 # =============================================================================
-# 5. ATALHO CTRL+F12 NO GNOME
+# 5. ATALHO CTRL+Alt+X NO GNOME
 # =============================================================================
 register_shortcut() {
     info "Registrando atalho CTRL+F12 no GNOME..."
