@@ -30,7 +30,19 @@ error()   { echo -e "${RED}[ERRO]${NC} $1"; exit 1; }
 # =============================================================================
 install_dependencies() {
     info "Instalando dependências do sistema..."
-    sudo apt-get update -qq
+
+    # Remove PPAs problemáticos que não suportam Ubuntu Noble
+    if [ -f /etc/apt/sources.list.d/gnome3-team-ubuntu-gnome3-noble.list ]; then
+        info "Removendo PPA gnome3-team incompatível..."
+        sudo rm -f /etc/apt/sources.list.d/gnome3-team-ubuntu-gnome3-*.list
+    fi
+
+    # Atualiza repositórios (ignora erros de PPAs antigos)
+    sudo apt-get update -qq || {
+        warning "Alguns repositórios falharam, continuando..."
+        sudo apt-get update -qq --allow-releaseinfo-change 2>/dev/null || true
+    }
+
     sudo apt-get install -y \
         python3 \
         python3-pip \
