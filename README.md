@@ -3,8 +3,8 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue?style=flat-square)](LICENSE.md)
 [![Platform](https://img.shields.io/badge/platform-Ubuntu%20X11-E95420?style=flat-square&logo=ubuntu&logoColor=white)](https://ubuntu.com)
 [![Session](https://img.shields.io/badge/session-Xorg%20only-informational?style=flat-square)](https://www.x.org)
-[![Offline](https://img.shields.io/badge/mode-100%25%20offline-success?style=flat-square)](https://github.com/SYSTRAN/faster-whisper)
-[![Powered by Whisper](https://img.shields.io/badge/powered%20by-faster--whisper-blueviolet?style=flat-square)](https://github.com/SYSTRAN/faster-whisper)
+[![Offline](https://img.shields.io/badge/mode-100%25%20offline-success?style=flat-square)](https://github.com/ggml-org/whisper.cpp)
+[![Powered by Whisper](https://img.shields.io/badge/powered%20by-whisper.cpp-blueviolet?style=flat-square)](https://github.com/ggml-org/whisper.cpp)
 [![Stars](https://img.shields.io/github/stars/felipezarco/zarco-x11-dictation?style=flat-square)](https://github.com/felipezarco/zarco-x11-dictation/stargazers)
 
 ## Why type? I just talk to my machine now. 
@@ -12,7 +12,9 @@ Perfect Ubuntu (Xorg) offline dictation with a single keyboard shortcut.
 
 I got tired of switching context to type every little thing. So I built this: I press a shortcut, say what I want, press it again — and the text appears wherever my cursor is. No cloud, no account, no subscription. 100% offline. Just my voice and my machine.
 
-Press **CTRL+Alt+X** to start recording, say what you want, press **CTRL+Alt+X** again and the text is automatically typed wherever your cursor is — in any application.
+Press **CTRL+Alt+X** to start recording, say what you want, press **CTRL+Alt+X** again and the text is automatically pasted wherever your cursor is — in any application.
+
+Forgot it on? The recording stops by itself after 10 minutes without any sound, so it never fills your memory.
 
 <img width="1231" height="727" alt="image" src="https://github.com/user-attachments/assets/b08c9252-fa74-466a-95b0-1ead88aa5943" />
 
@@ -52,48 +54,53 @@ cd zarco-x11-dictation
 chmod +x setup-dictation.sh && ./setup-dictation.sh
 ```
 
-The script installs dependencies, sets up the Python environment with [faster-whisper](https://github.com/SYSTRAN/faster-whisper), downloads the voice model (~244MB), and registers the **CTRL+Alt+X** shortcut in GNOME automatically.
+The script installs dependencies, builds [whisper.cpp](https://github.com/ggml-org/whisper.cpp), downloads the `small` voice model (~466MB), installs `dictation-toggle` in `~/.local/bin` and registers the **CTRL+Alt+X** shortcut in GNOME, keeping your other custom shortcuts. Running it over the old faster-whisper version replaces it.
 
 ## Usage
 
 | Action | Result |
 |---|---|
 | **CTRL+Alt+X** (1st press) | Starts recording |
-| Speak normally | — |
-| **CTRL+Alt+X** (2nd press) | Transcribes and types the text where your cursor is |
+| Speak normally | Pauses are fine |
+| **CTRL+Alt+X** (2nd press) | Transcribes and pastes the text where your cursor is |
+| Forget it on | Stops by itself after 10 minutes without sound |
 
-Works in any text field: terminal, VS Code, browser, editor, etc.
+Works in any text field: terminal, VS Code, browser, editor, etc. Your clipboard is restored right after the paste.
 
 ## How it works
 
-- **[faster-whisper](https://github.com/SYSTRAN/faster-whisper)** — offline transcription using OpenAI's Whisper models
-- **arecord** — captures microphone audio via ALSA
-- **xdotool** — simulates typing in the active window (X11)
+- **[whisper.cpp](https://github.com/ggml-org/whisper.cpp)**: offline transcription using OpenAI's Whisper models, on the CPU
+- **arecord**: captures microphone audio via ALSA
+- **xclip + xdotool**: paste the text in the active window (X11), using CTRL+Shift+V in terminals
+- **dictation-toggle**: a single Ruby script (stdlib only) that ties everything together and watches the recording for silence
 
 ## Customization
 
-To change the Whisper model, edit `~/.local/bin/dictation-transcribe.py`:
+Everything lives in the constants at the top of `~/.local/bin/dictation-toggle`:
 
-```python
-model = WhisperModel("small", device="cpu", compute_type="int8")
-#                     ^^^^^
-#  tiny | base | small (default) | medium | large-v3
+```ruby
+MODEL         = "#{WHISPER}/models/ggml-small.bin" # tiny | base | small (default) | medium | large-v3
+LANGUAGE      = "pt"  # or "en", "es"... "auto" detects it, but takes ~2 s longer
+SILENCE_STOP  = 600   # seconds without sound before a forgotten recording stops
+SILENCE_LEVEL = 0.01  # volume (RMS) below which it counts as silence
 ```
 
-To change the language, update `language="pt"` on the same line.
+To use another model, download it first:
+
+```bash
+sh ~/.local/share/whisper.cpp/models/download-ggml-model.sh medium
+```
 
 To change the keyboard shortcut, go to **Settings → Keyboard → Keyboard Shortcuts → Custom Shortcuts**.
 
 ## Uninstall
 
 ```bash
-rm -f ~/.local/bin/dictation-start \
-      ~/.local/bin/dictation-stop \
-      ~/.local/bin/dictation-toggle \
-      ~/.local/bin/dictation-transcribe.py
-rm -rf ~/.dictation
-gsettings set org.gnome.settings-daemon.plugins.media-keys custom-keybindings "[]"
+rm -f ~/.local/bin/dictation-toggle
+rm -rf ~/.local/share/whisper.cpp
 ```
+
+Then remove the **Ditado por Voz** custom shortcut in the GNOME keyboard settings.
 
 ---
 

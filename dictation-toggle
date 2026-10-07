@@ -1,0 +1,136 @@
+#!/usr/bin/env ruby
+# Ditado por voz (atalho do GNOME "Ditado por Voz", Ctrl+Alt+X).
+# Primeira chamada começa a gravar; a segunda para, transcreve com o whisper.cpp
+# e cola o texto na janela ativa, devolvendo depois o que estava no clipboard.
+# Se ninguém falar por SILENCE_STOP segundos seguidos, a gravação para sozinha.
+
+require "etc"
+
+WHISPER   = File.expand_path("~/.local/share/whisper.cpp")
+CLI       = "#{WHISPER}/build/bin/whisper-cli"
+MODEL     = "#{WHISPER}/models/ggml-small.bin"
+LANGUAGE  = "pt" # "auto" detecta o idioma, mas custa uns 2 s a mais
+THREADS   = [Etc.nprocessors / 2, 1].max # só os núcleos físicos; com hyper-threading fica várias vezes mais lento
+
+SILENCE_STOP  = 600  # segundos seguidos sem som até parar sozinho (um ditado esquecido já lotou o /run/user)
+SILENCE_LEVEL = 0.01 # RMS, em fração do volume máximo, abaixo do qual conta como silêncio; o ruído do microfone fica perto de 0.001
+
+STATE = File.join(ENV.fetch("XDG_RUNTIME_DIR", "/tmp"), "dictation")
+AUDIO = File.join(STATE, "audio.wav")
+PID   = File.join(STATE, "recorder.pid")
+
+TERMINAL = /term|kitty|alacritty|tilix|konsole|ptyxis|kgx|wezterm/i
+
+def notify(icon, message, ms)
+  system("notify-send", "-i", icon, "Ditado", message, "-t", ms.to_s)
+end
+
+def recording_pid
+  pid = File.read(PID).to_i
+  pid if File.exist?("/proc/#{pid}/comm") && File.read("/proc/#{pid}/comm").strip == "arecord"
+rescue Errno::ENOENT
+  nil
+end
+
+def start
+  Dir.mkdir(STATE) unless Dir.exist?(STATE)
+  pid = Process.spawn("arecord", "-q", "-f", "S16_LE", "-r", "16000", "-c", "1", "-t", "wav", AUDIO,
+                      pgroup: true, in: File::NULL, out: File::NULL, err: File::NULL)
+  File.write(PID, pid)
+  notify("microphone", "🎙️ Gravando... (Ctrl+Alt+X para parar)", 2000)
+  fork { watch_silence(pid) }
+end
+
+def stop(pid)
+  File.delete(PID)
+  Process.kill("INT", pid)
+  # espera o arecord fechar o cabeçalho do wav
+  40.times { break unless File.exist?("/proc/#{pid}"); sleep 0.05 }
+end
+
+def still_recording?(pid)
+  File.exist?("/proc/#{pid}") && File.read(PID).to_i == pid
+rescue Errno::ENOENT
+  false
+end
+
+def sound?(data)
+  data.unpack("s<*").each_slice(320).any? do |window| # janelas de 20 ms
+    Math.sqrt(window.sum { |s| s * s }.fdiv(window.size)) > SILENCE_LEVEL * 32_768
+  end
+end
+
+def now = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
+# Processo à parte que lê, a cada segundo, o que entrou no wav e encerra a gravação
+# esquecida depois de SILENCE_STOP segundos seguidos sem som. Sai sozinho quando o
+# atalho para a gravação antes, porque o recorder.pid deixa de existir.
+def watch_silence(pid)
+  Process.setsid
+  $stdin.reopen(File::NULL)
+  $stdout.reopen(File::NULL, "w")
+  $stderr.reopen(File::NULL, "w")
+
+  offset = 44 # cabeçalho do wav que o arecord escreve
+  last_sound = now
+  while still_recording?(pid)
+    sleep 1
+    data = File.binread(AUDIO, nil, offset).to_s rescue ""
+    data = data.byteslice(0, data.bytesize & ~1) # só amostras inteiras de 16 bits
+    offset += data.bytesize
+    last_sound = now if sound?(data)
+    next if now - last_sound < SILENCE_STOP
+
+    stop(pid)
+    File.delete(AUDIO) if File.exist?(AUDIO)
+    notify("microphone-sensitivity-muted", "⏹️ Gravação parada após #{SILENCE_STOP / 60} min sem fala.", 4000)
+    break
+  end
+end
+
+def transcribe(audio)
+  out = IO.popen([CLI, "-m", MODEL, "-f", audio, "-l", LANGUAGE, "-t", THREADS.to_s, "-nt", "-np", "-sns"],
+                 err: File::NULL, &:read)
+  # em silêncio o Whisper em português costuma inventar a legenda da Amara
+  out.lines.map(&:strip).reject { |l| l.empty? || l.match?(/amara\.org/i) }.join(" ")
+end
+
+def clipboard_text
+  targets = IO.popen(%w[xclip -selection clipboard -o -t TARGETS], err: File::NULL, &:read)
+  IO.popen(%w[xclip -selection clipboard -o -t UTF8_STRING], err: File::NULL, &:read) if targets.include?("UTF8_STRING")
+end
+
+def set_clipboard(text)
+  IO.popen(%w[xclip -selection clipboard -i], "w") { |io| io.write(text) }
+end
+
+def paste(text)
+  previous = clipboard_text
+  set_clipboard(text)
+  window = `xdotool getactivewindow`.strip
+  klass = IO.popen(["xprop", "-id", window, "WM_CLASS"], err: File::NULL, &:read)
+  system("xdotool", "key", "--clearmodifiers", klass.match?(TERMINAL) ? "ctrl+shift+v" : "ctrl+v")
+  return unless previous
+
+  sleep 0.5 # a janela precisa ler o clipboard antes de ele voltar ao que era
+  set_clipboard(previous)
+end
+
+def main
+  pid = recording_pid
+  return start unless pid
+
+  stop(pid)
+  notify("system-search", "⏳ Transcrevendo...", 3000)
+  text = transcribe(AUDIO)
+  File.delete(AUDIO) if File.exist?(AUDIO)
+
+  if text.empty?
+    notify("dialog-error", "❌ Nenhum texto detectado.", 2000)
+  else
+    paste(text)
+    notify("emblem-default", "✅ #{text}", 3000)
+  end
+end
+
+main if $PROGRAM_NAME == __FILE__

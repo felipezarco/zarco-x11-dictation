@@ -1,8 +1,8 @@
 #!/bin/bash
 # =============================================================================
-# zarco-x11-dictate — setup-dictation.sh
+# zarco-x11-dictation — setup-dictation.sh
 # Instala e configura ditado por voz no Ubuntu X11 (atalho CTRL+Alt+X)
-# Usa: faster-whisper (offline) + xdotool + arecord
+# Usa: whisper.cpp (offline) + arecord + xclip + xdotool, controlados por Ruby
 #
 # IMPORTANTE: Faça login com a sessão "Ubuntu" (Xorg), NÃO "Ubuntu com Wayland".
 # Na tela de login, clique no ícone ⚙️ e selecione "Ubuntu" antes de entrar.
@@ -10,10 +10,12 @@
 
 set -e
 
-VENV_DIR="$HOME/.dictation"
 SCRIPT_DIR="$HOME/.local/bin"
-AUDIO_FILE="/tmp/dictation_audio.wav"
-PID_FILE="/tmp/dictation.pid"
+WHISPER_DIR="$HOME/.local/share/whisper.cpp"
+WHISPER_VERSION="v1.9.4"
+MODEL="small"
+REPO_RAW="https://raw.githubusercontent.com/felipezarco/zarco-x11-dictation/main"
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Cores para output
 GREEN='\033[0;32m'
@@ -41,156 +43,99 @@ install_dependencies() {
     sudo apt-get update -qq 2>&1 | grep -v "ppa.launchpadcontent.net" | grep -v "não tem um arquivo Release" || true
 
     sudo apt-get install -y \
-        python3 \
-        python3-pip \
-        python3-venv \
-        xdotool \
+        ruby \
         alsa-utils \
-        ffmpeg \
+        xdotool \
+        xclip \
+        x11-utils \
         libnotify-bin \
+        git \
+        cmake \
+        build-essential \
+        curl \
         2>/dev/null
 
     info "Dependências instaladas."
 }
 
 # =============================================================================
-# 2. AMBIENTE PYTHON + faster-whisper
+# 2. REMOVE A VERSÃO ANTIGA (bash + faster-whisper)
 # =============================================================================
-install_python_env() {
-    info "Criando ambiente Python em $VENV_DIR ..."
-    python3 -m venv "$VENV_DIR"
-    "$VENV_DIR/bin/pip" install --upgrade pip -q
-    info "Instalando faster-whisper (pode demorar na primeira vez)..."
-    "$VENV_DIR/bin/pip" install faster-whisper -q
-    info "faster-whisper instalado."
+remove_legacy() {
+    if [ -d "$HOME/.dictation" ] || [ -f "$SCRIPT_DIR/dictation-transcribe.py" ]; then
+        info "Removendo a versão antiga com faster-whisper..."
+        rm -f "$SCRIPT_DIR/dictation-start" "$SCRIPT_DIR/dictation-stop" "$SCRIPT_DIR/dictation-transcribe.py"
+        rm -rf "$HOME/.dictation"
+    fi
 }
 
 # =============================================================================
-# 3. SCRIPT DE TRANSCRIÇÃO
+# 3. WHISPER.CPP
 # =============================================================================
-create_transcribe_script() {
-    info "Criando script de transcrição..."
+install_whisper() {
+    if [ ! -d "$WHISPER_DIR/.git" ]; then
+        info "Baixando whisper.cpp $WHISPER_VERSION em $WHISPER_DIR ..."
+        git clone --depth 1 --branch "$WHISPER_VERSION" https://github.com/ggml-org/whisper.cpp.git "$WHISPER_DIR"
+    fi
+
+    info "Compilando whisper-cli (pode demorar alguns minutos)..."
+    cmake -S "$WHISPER_DIR" -B "$WHISPER_DIR/build" -DCMAKE_BUILD_TYPE=Release > /dev/null
+    cmake --build "$WHISPER_DIR/build" --config Release -j "$(nproc)" --target whisper-cli > /dev/null
+    info "whisper-cli compilado."
+}
+
+# =============================================================================
+# 4. MODELO DO WHISPER
+# =============================================================================
+download_model() {
+    if [ -f "$WHISPER_DIR/models/ggml-$MODEL.bin" ]; then
+        info "Modelo '$MODEL' já baixado."
+        return
+    fi
+
+    info "Baixando modelo Whisper '$MODEL' (~466MB na primeira vez)..."
+    sh "$WHISPER_DIR/models/download-ggml-model.sh" "$MODEL" "$WHISPER_DIR/models"
+    info "Modelo pronto."
+}
+
+# =============================================================================
+# 5. SCRIPT DE DITADO (chamado pelo atalho)
+# =============================================================================
+install_toggle() {
+    info "Instalando dictation-toggle em $SCRIPT_DIR ..."
     mkdir -p "$SCRIPT_DIR"
 
-    cat > "$SCRIPT_DIR/dictation-transcribe.py" << 'PYEOF'
-#!/usr/bin/env python3
-import sys
-from faster_whisper import WhisperModel
+    # Rodando do clone usa o arquivo local; baixado só o setup, busca no GitHub
+    if [ -f "$HERE/dictation-toggle" ]; then
+        install -m 755 "$HERE/dictation-toggle" "$SCRIPT_DIR/dictation-toggle"
+    else
+        curl -fsSL "$REPO_RAW/dictation-toggle" -o "$SCRIPT_DIR/dictation-toggle"
+        chmod +x "$SCRIPT_DIR/dictation-toggle"
+    fi
 
-audio_file = sys.argv[1] if len(sys.argv) > 1 else "/tmp/dictation_audio.wav"
-
-# "small" é um bom equilíbrio entre velocidade e precisão em PT
-# Troque por "tiny" se quiser mais velocidade, ou "medium" para mais precisão
-model = WhisperModel("small", device="cpu", compute_type="int8")
-
-segments, info = model.transcribe(audio_file, beam_size=5, language="pt")
-
-text = " ".join(seg.text.strip() for seg in segments)
-print(text, end="")
-PYEOF
-
-    chmod +x "$SCRIPT_DIR/dictation-transcribe.py"
-    info "Script de transcrição criado."
+    info "dictation-toggle instalado."
 }
 
 # =============================================================================
-# 4. SCRIPTS DE CONTROLE (start / stop / toggle)
-# =============================================================================
-create_control_scripts() {
-    info "Criando scripts de controle..."
-
-    # --- dictation-start ---
-    cat > "$SCRIPT_DIR/dictation-start" << STARTEOF
-#!/bin/bash
-AUDIO_FILE="$AUDIO_FILE"
-PID_FILE="$PID_FILE"
-VENV_DIR="$VENV_DIR"
-
-# Já está gravando?
-if [ -f "\$PID_FILE" ]; then
-    notify-send -i microphone "Ditado" "Já está gravando..." -t 1500
-    exit 0
-fi
-
-notify-send -i microphone "Ditado" "🎙️ Gravando... (CTRL+Alt+X para parar)" -t 2000
-
-# Grava até receber sinal
-arecord -f cd -r 16000 -c 1 -t wav "\$AUDIO_FILE" -q &
-echo \$! > "\$PID_FILE"
-STARTEOF
-
-    # --- dictation-stop ---
-    cat > "$SCRIPT_DIR/dictation-stop" << STOPEOF
-#!/bin/bash
-AUDIO_FILE="$AUDIO_FILE"
-PID_FILE="$PID_FILE"
-VENV_DIR="$VENV_DIR"
-TRANSCRIBE_SCRIPT="$SCRIPT_DIR/dictation-transcribe.py"
-
-if [ ! -f "\$PID_FILE" ]; then
-    notify-send -i dialog-warning "Ditado" "Nenhuma gravação ativa." -t 1500
-    exit 0
-fi
-
-# Para a gravação
-kill \$(cat "\$PID_FILE") 2>/dev/null
-rm -f "\$PID_FILE"
-sleep 0.3
-
-notify-send -i system-search "Ditado" "⏳ Transcrevendo..." -t 3000
-
-# Transcreve
-TEXT=\$("\$VENV_DIR/bin/python3" "\$TRANSCRIBE_SCRIPT" "\$AUDIO_FILE" 2>/dev/null)
-
-if [ -n "\$TEXT" ]; then
-    # Remove espaço inicial se houver
-    TEXT=\$(echo "\$TEXT" | sed 's/^ *//')
-    # Digita o texto na janela ativa
-    xdotool type --clearmodifiers --delay 20 -- "\$TEXT"
-    notify-send -i emblem-default "Ditado" "✅ \$TEXT" -t 3000
-else
-    notify-send -i dialog-error "Ditado" "❌ Nenhum texto detectado." -t 2000
-fi
-
-rm -f "\$AUDIO_FILE"
-STOPEOF
-
-    # --- dictation-toggle (chamado pelo atalho) ---
-    cat > "$SCRIPT_DIR/dictation-toggle" << TOGGLEEOF
-#!/bin/bash
-PID_FILE="$PID_FILE"
-
-if [ -f "\$PID_FILE" ]; then
-    "$SCRIPT_DIR/dictation-stop"
-else
-    "$SCRIPT_DIR/dictation-start"
-fi
-TOGGLEEOF
-
-    chmod +x "$SCRIPT_DIR/dictation-start"
-    chmod +x "$SCRIPT_DIR/dictation-stop"
-    chmod +x "$SCRIPT_DIR/dictation-toggle"
-
-    info "Scripts de controle criados em $SCRIPT_DIR."
-}
-
-# =============================================================================
-# 5. ATALHO CTRL+Alt+X NO GNOME
+# 6. ATALHO CTRL+Alt+X NO GNOME
 # =============================================================================
 register_shortcut() {
-    info "Registrando atalho CTRL+F12 no GNOME..."
+    info "Registrando atalho CTRL+Alt+X no GNOME..."
 
     SCHEMA="org.gnome.settings-daemon.plugins.media-keys"
     BASE="/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/dictation/"
 
-    # Verifica se já existe outro atalho customizado para não sobrescrever
+    # Acrescenta o atalho do ditado sem apagar os outros atalhos customizados
     EXISTING=$(gsettings get $SCHEMA custom-keybindings 2>/dev/null || echo "@as []")
 
-    if echo "$EXISTING" | grep -q "dictation"; then
+    if echo "$EXISTING" | grep -q "$BASE"; then
         warning "Atalho de ditado já registrado, atualizando..."
+    elif echo "$EXISTING" | grep -q "'"; then
+        gsettings set $SCHEMA custom-keybindings "${EXISTING%]}, '${BASE}']"
+    else
+        gsettings set $SCHEMA custom-keybindings "['${BASE}']"
     fi
 
-    gsettings set $SCHEMA custom-keybindings "['${BASE}']"
     gsettings set "${SCHEMA}.custom-keybinding:${BASE}" name    "Ditado por Voz"
     gsettings set "${SCHEMA}.custom-keybinding:${BASE}" command "$SCRIPT_DIR/dictation-toggle"
     gsettings set "${SCHEMA}.custom-keybinding:${BASE}" binding "<Control><Alt>x"
@@ -200,35 +145,20 @@ register_shortcut() {
 }
 
 # =============================================================================
-# 6. PRÉ-AQUECIMENTO DO MODELO (baixa o modelo Whisper na primeira vez)
-# =============================================================================
-warmup_model() {
-    info "Baixando modelo Whisper 'small' (primeira vez ~244MB)..."
-    info "Isso pode demorar alguns minutos..."
-    "$VENV_DIR/bin/python3" -c "
-from faster_whisper import WhisperModel
-print('Baixando modelo...')
-WhisperModel('small', device='cpu', compute_type='int8')
-print('Modelo pronto!')
-"
-    info "Modelo carregado e em cache."
-}
-
-# =============================================================================
 # MAIN
 # =============================================================================
 echo ""
 echo "============================================"
-echo "  zarco-x11-dictate — Ditado por Voz       "
+echo "  zarco-x11-dictation — Ditado por Voz     "
 echo "  Requer login com Ubuntu (Xorg)!           "
 echo "============================================"
 echo ""
 
 install_dependencies
-install_python_env
-create_transcribe_script
-create_control_scripts
-warmup_model
+remove_legacy
+install_whisper
+download_model
+install_toggle
 register_shortcut
 
 echo ""
@@ -237,12 +167,13 @@ echo -e "${GREEN}  Instalação concluída!${NC}"
 echo "============================================"
 echo ""
 echo "  Como usar:"
-echo "  → Pressione CTRL+Alt+X para INICIAR a gravação"
-echo "  → Fale o que quiser"
-echo "  → Pressione CTRL+Alt+X novamente para PARAR e digitar"
+echo "  - Pressione CTRL+Alt+X para INICIAR a gravação"
+echo "  - Fale o que quiser"
+echo "  - Pressione CTRL+Alt+X novamente para PARAR e colar o texto"
+echo "  - Esquecida ligada, a gravação para sozinha após 10 min sem fala"
 echo ""
-echo "  Para trocar o idioma ou modelo, edite:"
-echo "  $SCRIPT_DIR/dictation-transcribe.py"
+echo "  Para trocar idioma, modelo ou o tempo de silêncio, edite as"
+echo "  constantes no topo de $SCRIPT_DIR/dictation-toggle"
 echo ""
 echo "  Modelos disponíveis: tiny | base | small | medium | large-v3"
 echo "  (quanto maior, mais preciso e mais lento)"
